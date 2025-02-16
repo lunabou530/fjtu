@@ -1,37 +1,45 @@
-# Chemins
-$dossier_reception = "Z:\"
-$dossier_analyse = "C:\projet\analyse"
-$dossier_transfert = "C:\projet\disponible"
-$dossier_quarantaine = "C:\projet\quarantaine"
-$fichier_log = "C:\projet\logs\logs.txt"
-$clamwin_path = "C:\Program Files (x86)\ClamWin\bin\clamscan.exe"
-$database_path = "C:\ProgramData\.clamwin\db"
+# Définition des chemins
+$DossierReception = "Z:\"  # Dossier réseau monté
+$DossierTransfer = "C:\projet\disponible"
+$FichierLog = "C:\projet\logs\logs.txt"
 
-# Fonction log
-function Write-Log { param ($msg) "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | $msg" | Out-File -Append -FilePath $fichier_log }
+# Fonction d'écriture dans le log
+function Write-Log {
+    param ($Message)
+    "$((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) | $Message" | Out-File -Append -FilePath $FichierLog
+}
 
-# Vérification de ClamWin et des dossiers
-if (!(Test-Path $clamwin_path) -or !(Test-Path $database_path)) { Write-Log "ClamWin ou sa base est manquante."; exit }
-foreach ($dossier in @($dossier_analyse, $dossier_transfert, $dossier_quarantaine)) { if (!(Test-Path $dossier)) { New-Item -Path $dossier -ItemType Directory | Out-Null } }
+# Vérification de l'existence du lecteur réseau
+if (!(Test-Path $DossierReception)) {
+    Write-Log "❌ Le lecteur réseau $DossierReception est inaccessible. Vérifiez la connexion."
+    Write-Host "Le lecteur réseau $DossierReception est inaccessible. Vérifiez la connexion."
+    exit
+} else {
+    Write-Log "✅ Le lecteur réseau $DossierReception est accessible."
+}
 
-# Surveillance
-while ($true) {
-    Get-ChildItem -Path $dossier_reception -Directory | ForEach-Object {
-        $user = $_.Name
-        Get-ChildItem -Path $_.FullName -Directory | ForEach-Object {
-            $fichier = $_.FullName
-            Write-Log "Analyse: $fichier"
-            Move-Item -Path $fichier -Destination "$dossier_analyse\$user" -Force
-            $resultat = & "$clamwin_path" --no-summary --infected --database="$database_path" --log="$fichier_log" "$dossier_analyse\$user\$(Get-Item $fichier).Name"
+# Récupération des dossiers dans le répertoire de réception
+Get-ChildItem -Path $DossierReception -Directory | ForEach-Object {
+    $DossierUtilisateur = $_.FullName
 
-            if ($resultat -match "Infected files: 0") {
-                Move-Item -Path "$dossier_analyse\$user\$(Get-Item $fichier).Name" -Destination "$dossier_transfert\$user" -Force
-                Write-Log "$fichier | SAIN | transféré"
-            } else {
-                Move-Item -Path "$dossier_analyse\$user\$(Get-Item $fichier).Name" -Destination "$dossier_quarantaine\$user" -Force
-                Write-Log "$fichier | VIRUS | mis en quarantaine"
-            }
+    # Vérification que le dossier source existe
+    if (Test-Path $DossierUtilisateur) {
+        Write-Log "📂 Dossier détecté: $DossierUtilisateur"
+
+        # Création du dossier de destination s'il n'existe pas
+        $DossierTransfertUtilisateur = "$DossierTransfer\$($_.Name)"
+        if (!(Test-Path $DossierTransfertUtilisateur)) {
+            Write-Log "📂 Création du dossier de transfert: $DossierTransfertUtilisateur"
+            New-Item -Path $DossierTransfertUtilisateur -ItemType Directory | Out-Null
         }
+
+        # Déplacement du dossier vers le dossier de transfert
+        Write-Log "🔄 Déplacement du dossier $DossierUtilisateur vers $DossierTransfertUtilisateur"
+        Move-Item -Path $DossierUtilisateur -Destination $DossierTransfertUtilisateur -Force
+        Write-Log "✅ Dossier déplacé: $DossierUtilisateur vers $DossierTransfertUtilisateur"
+        Write-Host "Réussite: $DossierUtilisateur déplacé vers $DossierTransfertUtilisateur"
+    } else {
+        Write-Log "❌ Dossier source introuvable: $DossierUtilisateur"
+        Write-Host "Dossier source introuvable: $DossierUtilisateur"
     }
-    Start-Sleep -Seconds 10
 }
