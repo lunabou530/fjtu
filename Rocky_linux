@@ -1,0 +1,54 @@
+#!/bin/bash
+
+# Chemins des dossiers
+DOSSIER_RECEPTION="/mnt/samba_share"
+DOSSIER_ANALYSE="/home/ort/analyse"
+DOSSIER_TRANSFER="/mnt/samba_sortie"
+DOSSIER_QUARANTAINE="/tmp/quarantaine"
+FICHIER_LOG="/home/ort/log/logs.txt"
+
+# Surveiller les fichiers
+while true; do
+    # Parcourir les sous-dossiers utilisateur dans le dossier de réception
+    for dossier_utilisateur in "$DOSSIER_RECEPTION"/*; do
+        if [ -d "$dossier_utilisateur" ]; then
+            # Parcourir les sous-dossiers contenant les fichiers
+            for dossier_fichier in "$dossier_utilisateur"/*; do
+                if [ -d "$dossier_fichier" ]; then
+                    # Log de détection de dossier
+                    echo "Dossier détecté: $dossier_fichier" >> "$FICHIER_LOG"
+
+                    # Lancer l'analyse avec ClamAV
+                    clamscan -r "$dossier_fichier" --move="$DOSSIER_QUARANTAINE" --quiet
+
+                    # Vérifier le résultat de l'analyse
+                    if [ $? -eq 0 ]; then
+                        # Fichier sain : Déplacer dans le dossier de transfert
+                        nom_utilisateur=$(basename "$dossier_utilisateur")
+                        chemin_dossier_transfert="$DOSSIER_TRANSFER/$nom_utilisateur"
+                        mkdir -p "$chemin_dossier_transfert"
+                        mv "$dossier_fichier" "$chemin_dossier_transfert"
+                        echo "$dossier_fichier | sain | fichier_transfere | $(date "+%Y-%m-%d_%H-%M-%S")" >> "$FICHIER_LOG"
+
+                        # Notification de transfert réussi
+                        echo "Réussite: $dossier_fichier a été transféré vers $chemin_dossier_transfert"
+                    else
+                        # Fichier infecté : Log et mise en quarantaine
+                        echo "$dossier_fichier | VIRUS | fichier_quarantaine | $(date "+%Y-%m-%d_%H-%M-%S")" >> "$FICHIER_LOG"
+
+                        # Notification d'échec de l'analyse
+                        echo "Échec: Le dossier $dossier_fichier est infecté et a été mis en quarantaine."
+                    fi
+
+                    # Notification de fin d'analyse
+                    echo "Analyse terminée pour le dossier $dossier_fichier"
+                else
+                    echo "Dossier non trouvé: $dossier_fichier" >> "$FICHIER_LOG"
+                fi
+            done
+        else
+            echo "Dossier utilisateur non trouvé: $dossier_utilisateur" >> "$FICHIER_LOG"
+        fi
+    done
+    sleep 10
+done
