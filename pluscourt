@@ -11,7 +11,7 @@ function Write-Log {
     "$((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) | $Message" | Out-File -Append -FilePath $FichierLog
 }
 
-# Vérification du lecteur réseau
+# Vérification initiale du lecteur réseau
 if (!(Test-Path $DossierReception)) {
     Write-Log "❌ Le lecteur réseau $DossierReception est inaccessible."
     Write-Host "Le lecteur réseau $DossierReception est inaccessible. Vérifiez la connexion."
@@ -20,50 +20,56 @@ if (!(Test-Path $DossierReception)) {
 
 Write-Log "✅ Le lecteur réseau $DossierReception est accessible."
 
-# Récupération des dossiers dans le répertoire de réception
-Get-ChildItem -Path $DossierReception -Directory | ForEach-Object {
-    $DossierUtilisateur = $_.FullName
-    $NomUtilisateur = $_.Name
+# Boucle infinie pour surveiller les fichiers en continu
+while ($true) {
+    # Récupération des dossiers dans le répertoire de réception
+    Get-ChildItem -Path $DossierReception -Directory | ForEach-Object {
+        $DossierUtilisateur = $_.FullName
+        $NomUtilisateur = $_.Name
 
-    # Vérification que le dossier source existe
-    if (Test-Path $DossierUtilisateur) {
-        Write-Log "📂 Dossier détecté: $DossierUtilisateur"
+        # Vérification que le dossier source existe toujours
+        if (Test-Path $DossierUtilisateur) {
+            Write-Log "📂 Dossier détecté: $DossierUtilisateur"
 
-        # Création du dossier d'analyse si inexistant
-        $DossierAnalyseUtilisateur = "$DossierAnalyse\$NomUtilisateur"
-        if (!(Test-Path $DossierAnalyseUtilisateur)) {
-            Write-Log "📂 Création du dossier d'analyse: $DossierAnalyseUtilisateur"
-            New-Item -Path $DossierAnalyseUtilisateur -ItemType Directory | Out-Null
-        }
-
-        # Déplacement vers dossier d'analyse
-        Write-Log "🔄 Déplacement vers l'analyse: $DossierUtilisateur -> $DossierAnalyseUtilisateur"
-        Move-Item -Path $DossierUtilisateur -Destination $DossierAnalyseUtilisateur -Force
-        Write-Host "Dossier déplacé vers l'analyse: $DossierUtilisateur -> $DossierAnalyseUtilisateur"
-
-        # Exécution de l'analyse ClamWin
-        Write-Log "🕵️ Début de l'analyse ClamWin: $DossierAnalyseUtilisateur"
-        $Resultat = & "$ClamWinPath" --no-summary --infected --log="$FichierLog" "$DossierAnalyseUtilisateur"
-
-        # Vérification du résultat de l’analyse
-        if ($Resultat -match "Infected files: 0") {
-            # Fichier sain : déplacement vers dossier de transfert
-            $DossierTransfertUtilisateur = "$DossierTransfer\$NomUtilisateur"
-            if (!(Test-Path $DossierTransfertUtilisateur)) {
-                Write-Log "📂 Création du dossier de transfert: $DossierTransfertUtilisateur"
-                New-Item -Path $DossierTransfertUtilisateur -ItemType Directory | Out-Null
+            # Création du dossier d'analyse si inexistant
+            $DossierAnalyseUtilisateur = "$DossierAnalyse\$NomUtilisateur"
+            if (!(Test-Path $DossierAnalyseUtilisateur)) {
+                Write-Log "📂 Création du dossier d'analyse: $DossierAnalyseUtilisateur"
+                New-Item -Path $DossierAnalyseUtilisateur -ItemType Directory | Out-Null
             }
 
-            # Déplacement du dossier analysé vers transfert
-            Write-Log "✅ Dossier sain, déplacement vers transfert: $DossierAnalyseUtilisateur -> $DossierTransfertUtilisateur"
-            Move-Item -Path $DossierAnalyseUtilisateur -Destination $DossierTransfertUtilisateur -Force
-            Write-Host "Dossier sain transféré: $DossierAnalyseUtilisateur -> $DossierTransfertUtilisateur"
+            # Déplacement vers dossier d'analyse
+            Write-Log "🔄 Déplacement vers analyse: $DossierUtilisateur -> $DossierAnalyseUtilisateur"
+            Move-Item -Path $DossierUtilisateur -Destination $DossierAnalyseUtilisateur -Force
+            Write-Host "Dossier déplacé vers analyse: $DossierUtilisateur -> $DossierAnalyseUtilisateur"
+
+            # Exécution de l'analyse ClamWin
+            Write-Log "🕵️ Début de l'analyse ClamWin: $DossierAnalyseUtilisateur"
+            $Resultat = & "$ClamWinPath" --no-summary --infected --log="$FichierLog" "$DossierAnalyseUtilisateur"
+
+            # Vérification du résultat de l’analyse
+            if ($Resultat -match "Infected files: 0") {
+                # Fichier sain : déplacement vers dossier de transfert
+                $DossierTransfertUtilisateur = "$DossierTransfer\$NomUtilisateur"
+                if (!(Test-Path $DossierTransfertUtilisateur)) {
+                    Write-Log "📂 Création du dossier de transfert: $DossierTransfertUtilisateur"
+                    New-Item -Path $DossierTransfertUtilisateur -ItemType Directory | Out-Null
+                }
+
+                # Déplacement du dossier analysé vers transfert
+                Write-Log "✅ Dossier sain, déplacement vers transfert: $DossierAnalyseUtilisateur -> $DossierTransfertUtilisateur"
+                Move-Item -Path $DossierAnalyseUtilisateur -Destination $DossierTransfertUtilisateur -Force
+                Write-Host "Dossier sain transféré: $DossierAnalyseUtilisateur -> $DossierTransfertUtilisateur"
+            } else {
+                Write-Log "❌ Dossier infecté, non transféré: $DossierAnalyseUtilisateur"
+                Write-Host "⚠️ Dossier infecté détecté, il reste dans: $DossierAnalyseUtilisateur"
+            }
         } else {
-            Write-Log "❌ Dossier infecté, non transféré: $DossierAnalyseUtilisateur"
-            Write-Host "⚠️ Dossier infecté détecté, il reste dans: $DossierAnalyseUtilisateur"
+            Write-Log "❌ Dossier source introuvable: $DossierUtilisateur"
+            Write-Host "Dossier source introuvable: $DossierUtilisateur"
         }
-    } else {
-        Write-Log "❌ Dossier source introuvable: $DossierUtilisateur"
-        Write-Host "Dossier source introuvable: $DossierUtilisateur"
     }
+
+    # Pause avant la prochaine vérification (évite la surcharge CPU)
+    Start-Sleep -Seconds 10
 }
