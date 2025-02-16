@@ -7,23 +7,32 @@ $fichier_log = "C:\projet\logs\logs.txt"
 # Chemin vers l'exécutable ClamWin
 $clamScanPath = "C:\Program Files\ClamWin\bin\clamscan.exe"
 
+# Fonction pour obtenir la date et l'heure actuelles
+function Obtenir_DateHeure {
+    return (Get-Date).ToString("yyyy-MM-dd_HH-mm-ss")
+}
+
+# Fonction pour écrire dans le fichier de log
+function Ecrire_Dans_Log {
+    param($message, $type, $action)
+    $dateHeure = Obtenir_DateHeure
+    "$message | $type | $action | $dateHeure" | Out-File -Append $fichier_log
+}
+
 # Surveiller les fichiers
 while ($true) {
     # Parcourir les sous-dossiers utilisateur dans le dossier de réception
     Get-ChildItem -Path $dossier_reception -Directory | ForEach-Object {
         $dossier_utilisateur = $_
-
-        # Parcourir les sous-dossiers contenant les fichiers
         Get-ChildItem -Path $dossier_utilisateur.FullName -Directory | ForEach-Object {
             $dossier_fichier = $_
 
             # Log de détection de dossier
-            $dateHeure = (Get-Date).ToString("yyyy-MM-dd_HH-mm-ss")
-            "$dossier_fichier | detecte | dossier_detecte | $dateHeure" | Out-File -Append $fichier_log
-            Write-Output "Analysant le dossier: $dossier_fichier"
+            Ecrire_Dans_Log $dossier_fichier.FullName "detecte" "dossier_detecte"
+            Write-Output "Analysant le dossier: $($dossier_fichier.FullName)"
 
             # Lancer l'analyse avec ClamWin
-            & $clamScanPath --verbose --recursive --log=$fichier_log $dossier_fichier
+            & $clamScanPath --verbose --recursive --log=$fichier_log $dossier_fichier.FullName
 
             # Vérification du code de retour de l'analyse
             $exitCode = $LASTEXITCODE
@@ -37,24 +46,24 @@ while ($true) {
                 if (-not (Test-Path $chemin_dossier_transfert)) {
                     New-Item -Path $chemin_dossier_transfert -ItemType Directory
                 }
-                Write-Output "Déplaçant $dossier_fichier vers $chemin_dossier_transfert"
-                Move-Item -Path $dossier_fichier -Destination $chemin_dossier_transfert
-                "$dossier_fichier | sain | fichier_transfere | $dateHeure" | Out-File -Append $fichier_log
-                Write-Output "Réussite: $dossier_fichier a été transféré vers $chemin_dossier_transfert"
+                Write-Output "Déplaçant $($dossier_fichier.FullName) vers $chemin_dossier_transfert"
+                Move-Item -Path $dossier_fichier.FullName -Destination $chemin_dossier_transfert
+                Ecrire_Dans_Log $dossier_fichier.FullName "sain" "fichier_transfere"
+                Write-Output "Réussite: $($dossier_fichier.FullName) a été transféré vers $chemin_dossier_transfert"
             } elseif ($exitCode -eq 1) {
                 # Fichier infecté : Log et suppression
-                "$dossier_fichier | VIRUS | fichier_supprime | $dateHeure" | Out-File -Append $fichier_log
-                Write-Output "Supprimant le dossier infecté: $dossier_fichier"
-                Remove-Item -Path $dossier_fichier -Recurse -Force
-                Write-Output "Échec: Le dossier $dossier_fichier est infecté et a été supprimé."
+                Ecrire_Dans_Log $dossier_fichier.FullName "VIRUS" "fichier_supprime"
+                Write-Output "Supprimant le dossier infecté: $($dossier_fichier.FullName)"
+                Remove-Item -Path $dossier_fichier.FullName -Recurse -Force
+                Write-Output "Échec: Le dossier $($dossier_fichier.FullName) est infecté et a été supprimé."
             } elseif ($exitCode -eq 2) {
-                Write-Output "Erreur: Une erreur est survenue pendant l'analyse de $dossier_fichier."
+                Write-Output "Erreur: Une erreur est survenue pendant l'analyse de $($dossier_fichier.FullName)."
             } else {
-                Write-Output "Code de retour inconnu : $exitCode pour $dossier_fichier"
+                Write-Output "Code de retour inconnu : $exitCode pour $($dossier_fichier.FullName)"
             }
 
             # Notification de fin d'analyse
-            Write-Output "Analyse terminée pour le dossier $dossier_fichier"
+            Write-Output "Analyse terminée pour le dossier $($dossier_fichier.FullName)"
         }
     }
     Start-Sleep -Seconds 10
