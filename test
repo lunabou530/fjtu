@@ -18,10 +18,30 @@ if (!(Test-Path $DatabasePath)) {
     exit
 }
 
+# Vérification d'accès au dossier de réception
+if (!(Test-Path $DossierReception)) {
+    Write-Log "❌ Dossier de réception inaccessible: $DossierReception"
+    Write-Host "Dossier de réception inaccessible. Vérifiez l'accès réseau."
+    exit
+}
+
 # Surveillance des fichiers
 while ($true) {
+    Write-Log "🔄 Vérification des fichiers dans $DossierReception"
+
+    # Attente avant de scanner les répertoires, permet à la connexion réseau de se stabiliser
+    Start-Sleep -Seconds 5
+
+    # Vérification des répertoires dans le dossier de réception
     Get-ChildItem -Path $DossierReception -Directory | ForEach-Object {
         $DossierUtilisateur = $_.FullName
+
+        # Vérification si le dossier utilisateur existe
+        if (!(Test-Path $DossierUtilisateur)) {
+            Write-Log "❌ Dossier utilisateur non trouvé: $DossierUtilisateur"
+            return
+        }
+
         Get-ChildItem -Path $DossierUtilisateur -Directory | ForEach-Object {
             $DossierFichier = $_.FullName
             Write-Log "📂 Dossier détecté: $DossierFichier"
@@ -36,8 +56,8 @@ while ($true) {
 
             # Vérification que le fichier existe avant le déplacement
             if (Test-Path $DossierFichier) {
+                Write-Log "✅ Déplacement du fichier vers $DossierTemp"
                 Move-Item -Path $DossierFichier -Destination $DossierTemp -Force
-                Write-Log "🔄 Déplacé vers $DossierTemp pour analyse"
                 $DossierFichier = "$DossierTemp\$(Get-Item $DossierFichier).Name"
             } else {
                 Write-Log "❌ Fichier non trouvé: $DossierFichier"
@@ -47,6 +67,7 @@ while ($true) {
 
             # Analyse avec ClamWin
             if (Test-Path $DossierFichier) {
+                Write-Log "🔍 Analyse de $DossierFichier avec ClamWin"
                 $Resultat = & "$ClamWinPath" --no-summary --infected --database="$DatabasePath" --log="$FichierLog" "$DossierFichier"
 
                 # Vérification du résultat de l'analyse
@@ -54,6 +75,7 @@ while ($true) {
                     # Fichier sain : déplacement vers le dossier de transfert
                     $DossierTransfertUtilisateur = "$DossierTransfer\$NomUtilisateur"
                     if (!(Test-Path $DossierTransfertUtilisateur)) {
+                        Write-Log "📂 Création du dossier de transfert: $DossierTransfertUtilisateur"
                         New-Item -Path $DossierTransfertUtilisateur -ItemType Directory | Out-Null
                     }
                     Move-Item -Path $DossierFichier -Destination $DossierTransfertUtilisateur -Force
