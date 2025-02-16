@@ -2,20 +2,35 @@
 $dossier_source = "Z:\"
 $dossier_destination = "C:\projet\disponible"
 
+# Chemin vers l'exécutable ClamWin
+$clamScanPath = "C:\Program Files\ClamWin\bin\clamscan.exe"
+
 # Parcourir les fichiers et sous-dossiers dans le dossier source
 Get-ChildItem -Path $dossier_source -Recurse | ForEach-Object {
     $item = $_
-    $destination_path = Join-Path -Path $dossier_destination -ChildPath $item.FullName.Substring($dossier_source.Length)
 
-    # Créer les sous-dossiers dans le dossier de destination si nécessaire
-    $destination_directory = Split-Path -Path $destination_path -Parent
-    if (-not (Test-Path -Path $destination_directory)) {
-        New-Item -ItemType Directory -Path $destination_directory | Out-Null
+    # Lancer l'analyse avec ClamWin
+    & $clamScanPath --verbose --recursive $item.FullName
+
+    # Vérification du code de retour de l'analyse
+    $exitCode = $LASTEXITCODE
+
+    if ($exitCode -eq 0) {
+        # Fichier sain : Déplacer dans le dossier de destination
+        $destination_path = Join-Path -Path $dossier_destination -ChildPath $item.FullName.Substring($dossier_source.Length)
+
+        # Créer les sous-dossiers dans le dossier de destination si nécessaire
+        $destination_directory = Split-Path -Path $destination_path -Parent
+        if (-not (Test-Path -Path $destination_directory)) {
+            New-Item -ItemType Directory -Path $destination_directory | Out-Null
+        }
+
+        # Déplacer l'élément (fichier ou dossier)
+        Move-Item -Path $item.FullName -Destination $destination_path
+        Write-Output "Déplacé: $($item.FullName) vers $destination_path"
+    } else {
+        Write-Output "Fichier infecté ou erreur: $($item.FullName)"
     }
-
-    # Déplacer l'élément (fichier ou dossier)
-    Move-Item -Path $item.FullName -Destination $destination_path
-    Write-Output "Déplacé: $($item.FullName) vers $destination_path"
 }
 
 Write-Output "Déplacement terminé."
