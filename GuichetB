@@ -1,8 +1,7 @@
 # Chemins des dossiers
-$dossier_reception = "C:\mnt\samba_share"
-$dossier_analyse = "C:\home\ort\analyse"
-$dossier_transfert = "C:\mnt\samba_sortie"
-$dossier_quarantaine = "C:\tmp\quarantaine"
+$dossier_reception = "Z:"
+$dossier_analyse = "C:\projet\analyse"
+$dossier_transfert = "C:\projet\disponible"
 $fichier_log = "C:\home\ort\log\logs.txt"
 
 # Fonction pour obtenir la date et l'heure actuelles
