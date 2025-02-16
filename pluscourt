@@ -1,58 +1,69 @@
-# Définition des chemins
-$ClamWinPath = "C:\Program Files (x86)\ClamWin\bin\clamscan.exe"
-$DossierReception = "Z:\"
-$DossierAnalyse = "C:\analyse"
-$DossierTransfer = "C:\projet\disponible"
-$FichierLog = "C:\projet\logs\logs.txt"
+# Chemins des dossiers
+$dossier_reception = "Z:\"
+$dossier_analyse = "C:\projet\analyse"
+$dossier_transfert = "C:\projet\disponible"
+$fichier_log = "C:\projet\logs\logs.txt"
 
-# Fonction d'écriture dans le log
-function Write-Log {
-    param ($Message)
-    "$((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) | $Message" | Out-File -Append -FilePath $FichierLog
+# Chemin vers l'exécutable ClamWin
+$clamScanPath = "C:\Program Files\ClamWin\bin\clamscan.exe"
+
+# Fonction pour obtenir la date et l'heure actuelles
+function Obtenir_DateHeure {
+    return (Get-Date).ToString("yyyy-MM-dd_HH-mm-ss")
 }
 
-# Vérifier si le dossier d'analyse existe, sinon le créer
-if (!(Test-Path $DossierAnalyse)) {
-    New-Item -Path $DossierAnalyse -ItemType Directory | Out-Null
+# Fonction pour écrire dans le fichier de log
+function Ecrire_Dans_Log {
+    param($message, $type, $action)
+    $dateHeure = Obtenir_DateHeure
+    "$message | $type | $action | $dateHeure" | Out-File -Append $fichier_log
 }
 
-# Vérifier si le dossier de transfert existe, sinon le créer
-if (!(Test-Path $DossierTransfer)) {
-    New-Item -Path $DossierTransfer -ItemType Directory | Out-Null
+# Fonction pour traiter un dossier
+function Traiter_Dossier {
+    param($dossier_fichier, $dossier_utilisateur)
+
+    # Log de détection de dossier
+    Ecrire_Dans_Log $dossier_fichier "detecte" "dossier_detecte"
+
+    # Lancer l'analyse avec ClamWin
+    $resultatAnalyse = & $clamScanPath --verbose --recursive --log=$fichier_log $dossier_fichier
+
+    # Vérification du code de retour de l'analyse
+    $exitCode = $?
+
+    # Logique if else en fonction du code de retour
+    if ($exitCode -eq $true) {
+        # Fichier sain : Déplacer dans le dossier de transfert
+        $nom_utilisateur = Split-Path $dossier_utilisateur -Leaf
+        $chemin_dossier_transfert = Join-Path $dossier_transfert $nom_utilisateur
+        if (-not (Test-Path $chemin_dossier_transfert)) {
+            New-Item -Path $chemin_dossier_transfert -ItemType Directory
+        }
+        Move-Item -Path $dossier_fichier -Destination $chemin_dossier_transfert
+        Ecrire_Dans_Log $dossier_fichier "sain" "fichier_transfere"
+        Write-Output "Réussite: $dossier_fichier a été transféré vers $chemin_dossier_transfert"
+    } elseif ($exitCode -eq $false) {
+        # Fichier infecté : Log et suppression
+        Ecrire_Dans_Log $dossier_fichier "VIRUS" "fichier_supprime"
+        Remove-Item -Path $dossier_fichier -Recurse -Force
+        Write-Output "Échec: Le dossier $dossier_fichier est infecté et a été supprimé."
+    } else {
+        Write-Output "Erreur: Une erreur est survenue pendant l'analyse de $dossier_fichier."
+    }
+
+    # Notification de fin d'analyse
+    Write-Output "Analyse terminée pour le dossier $dossier_fichier"
 }
 
-# Surveillance continue des fichiers
+# Surveiller les fichiers
 while ($true) {
-    # Récupérer les dossiers dans DossierReception
-    Get-ChildItem -Path $DossierReception -Directory | ForEach-Object {
-        $DossierUtilisateur = $_.FullName
-        $NomUtilisateur = $_.Name
-        $DossierAnalyseUtilisateur = "$DossierAnalyse\$NomUtilisateur"
-
-        # Déplacer le dossier vers le dossier d'analyse
-        Move-Item -Path $DossierUtilisateur -Destination $DossierAnalyseUtilisateur -Force
-        Write-Host "📂 Dossier déplacé vers analyse: $DossierUtilisateur -> $DossierAnalyseUtilisateur"
-        Write-Log "Dossier déplacé vers analyse: $DossierUtilisateur -> $DossierAnalyseUtilisateur"
-
-        # Exécuter l'analyse avec ClamWin
-        & "$ClamWinPath" --official-db-only "$DossierAnalyseUtilisateur"
-        
-        # Vérifier le code de retour pour déterminer si un fichier est infecté
-        if ($LASTEXITCODE -eq 0) {
-            # Aucun virus détecté, déplacement vers le dossier de transfert
-            $DossierTransfertUtilisateur = "$DossierTransfer\$NomUtilisateur"
-            if (!(Test-Path $DossierTransfertUtilisateur)) {
-                New-Item -Path $DossierTransfertUtilisateur -ItemType Directory | Out-Null
-            }
-            Move-Item -Path $DossierAnalyseUtilisateur -Destination $DossierTransfertUtilisateur -Force
-            Write-Host "✅ Dossier sain déplacé vers: $DossierTransfertUtilisateur"
-            Write-Log "✅ Dossier sain déplacé vers: $DossierTransfertUtilisateur"
-        } else {
-            # Virus détecté, le dossier reste dans analyse
-            Write-Host "❌ Dossier infecté détecté, il reste dans: $DossierAnalyseUtilisateur"
-            Write-Log "❌ Dossier infecté détecté, il reste dans: $DossierAnalyseUtilisateur"
+    # Parcourir les sous-dossiers utilisateur dans le dossier de réception
+    Get-ChildItem -Path $dossier_reception -Directory | ForEach-Object {
+        $dossier_utilisateur = $_
+        Get-ChildItem -Path $dossier_utilisateur.FullName -Directory | ForEach-Object {
+            Traiter_Dossier $_ $dossier_utilisateur
         }
     }
-    # Attendre 10 secondes avant de vérifier à nouveau
     Start-Sleep -Seconds 10
 }
