@@ -1,90 +1,61 @@
-#!/bin/bash
-
 # Chemins des dossiers
-DOSSIER_RECEPTION="/chemin/vers/reception"
-DOSSIER_ANALYSE="/chemin/vers/analyse"
-DOSSIER_TRANSFER="/chemin/vers/transfer"
-DOSSIER_QUARANTAINE="/chemin/vers/quarantine"
-FICHIER_LOG="/chemin/vers/logs/logs.txt"
+$dossier_reception = "C:\mnt\samba_share"
+$dossier_analyse = "C:\home\ort\analyse"
+$dossier_transfert = "C:\mnt\samba_sortie"
+$dossier_quarantaine = "C:\tmp\quarantaine"
+$fichier_log = "C:\home\ort\log\logs.txt"
 
 # Fonction pour obtenir la date et l'heure actuelles
-obtenir_date_heure() {
-    date "+%Y-%m-%d_%H-%M-%S"
+function Obtenir_DateHeure {
+    return (Get-Date).ToString("yyyy-MM-dd_HH-mm-ss")
 }
 
 # Fonction pour écrire dans le fichier de log
-ecrire_dans_log() {
-    local date_heure=$(obtenir_date_heure)
-    local message="$1 | $2 | $3 | $date_heure"
-    echo "$message" >> "$FICHIER_LOG"
+function Ecrire_Dans_Log {
+    param($message, $type, $action)
+    $dateHeure = Obtenir_DateHeure
+    "$message | $type | $action | $dateHeure" | Out-File -Append $fichier_log
 }
 
-# Fonction pour notifier
-notifier() {
-    local titre="$1"
-    local message="$2"
-    if [ -f /usr/bin/notify-send ]; then
-        notify-send -u critical "$titre" "$message"
-    fi
-}
+# Fonction pour traiter un dossier
+function Traiter_Dossier {
+    param($dossier_fichier, $dossier_utilisateur)
 
-# Fonction pour traiter un fichier
-traiter_fichier() {
-    local fichier="$1"
-    local dossier_utilisateur="$2"
+    # Log de détection de dossier
+    Ecrire_Dans_Log $dossier_fichier "detecte" "dossier_detecte"
 
-    # Créer un nom de dossier avec la date et l'heure pour l'unicité
-    local date_heure_string=$(obtenir_date_heure)
-    local chemin_nouveau_dossier="$dossier_utilisateur/$(basename "$fichier" .*)_$date_heure_string"
-    mkdir -p "$chemin_nouveau_dossier"
-
-    # Générer le hash et les métadonnées
-    local hash_fichier=$(sha256sum "$fichier" | awk '{ print $1 }')
-    local nom_utilisateur=$(basename "$dossier_utilisateur")
-    echo "$hash_fichier" > "$chemin_nouveau_dossier/hash_fichier.txt"
-    echo "$nom_utilisateur" > "$chemin_nouveau_dossier/utilisateur.txt"
-
-    # Déplacer le fichier et lancer l'analyse avec ClamAV
-    mv "$fichier" "$chemin_nouveau_dossier"
-    clamdscan --fdpass "$chemin_nouveau_dossier" --move="$DOSSIER_QUARANTAINE"
+    # Lancer l'analyse avec ClamWin
+    & "C:\Program Files\ClamAV\bin\clamdscan.exe" -r "$dossier_fichier" --move="$dossier_quarantaine" --quiet
 
     # Vérifier le résultat de l'analyse
-    if [ $? -eq 0 ]; then
-        # Fichier sain : Déplacer dans le dossier d'analyse
-        local chemin_dossier_analyse="$DOSSIER_ANALYSE/$nom_utilisateur"
-        mkdir -p "$chemin_dossier_analyse"
-        mv "$chemin_nouveau_dossier" "$chemin_dossier_analyse"
-
-        # Transfert vers le dossier de transfert
-        local chemin_dossier_transfert="$DOSSIER_TRANSFER/$nom_utilisateur"
-        mkdir -p "$chemin_dossier_transfert"
-        mv "$chemin_dossier_analyse" "$chemin_dossier_transfert"
-        ecrire_dans_log "$fichier" "sain" "fichier_transfere"
-
-        # Notification de transfert réussi
-        notifier "Transfert réussi" "Le fichier $fichier a été transféré vers $chemin_dossier_transfert"
-    else
+    if ($?) {
+        # Fichier sain : Déplacer dans le dossier de transfert
+        $nom_utilisateur = Split-Path $dossier_utilisateur -Leaf
+        $chemin_dossier_transfert = Join-Path $dossier_transfert $nom_utilisateur
+        if (-not (Test-Path $chemin_dossier_transfert)) {
+            New-Item -Path $chemin_dossier_transfert -ItemType Directory
+        }
+        Move-Item -Path $dossier_fichier -Destination $chemin_dossier_transfert
+        Ecrire_Dans_Log $dossier_fichier "sain" "fichier_transfere"
+        Write-Output "Réussite: $dossier_fichier a été transféré vers $chemin_dossier_transfert"
+    } else {
         # Fichier infecté : Log et mise en quarantaine
-        ecrire_dans_log "$fichier" "VIRUS" "fichier_quarantaine"
-
-        # Notification d'échec de l'analyse
-        notifier "Analyse échouée" "Le fichier $fichier est infecté et a été mis en quarantaine."
-    fi
+        Ecrire_Dans_Log $dossier_fichier "VIRUS" "fichier_quarantaine"
+        Write-Output "Échec: Le dossier $dossier_fichier est infecté et a été mis en quarantaine."
+    }
 
     # Notification de fin d'analyse
-    notifier "Analyse terminée" "Analyse terminée pour le fichier $fichier"
+    Write-Output "Analyse terminée pour le dossier $dossier_fichier"
 }
 
 # Surveiller les fichiers
-surveiller_fichiers() {
-    while true; do
-        inotifywait -q -r -e create,modify,move,delete,open,close,access "$DOSSIER_RECEPTION" --format '%w%f' |
-        while read fichier; do
-            dossier_utilisateur=$(dirname "$fichier")
-            traiter_fichier "$fichier" "$dossier_utilisateur"
-        done
-    done
+while ($true) {
+    # Parcourir les sous-dossiers utilisateur dans le dossier de réception
+    Get-ChildItem -Path $dossier_reception -Directory | ForEach-Object {
+        $dossier_utilisateur = $_
+        Get-ChildItem -Path $dossier_utilisateur.FullName -Directory | ForEach-Object {
+            Traiter_Dossier $_ $dossier_utilisateur
+        }
+    }
+    Start-Sleep -Seconds 10
 }
-
-# Démarrer la surveillance des fichiers
-surveiller_fichiers
