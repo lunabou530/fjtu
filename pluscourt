@@ -5,10 +5,22 @@ $dossier_destination = "C:\projet\disponible"
 # Chemin vers l'exécutable ClamWin
 $clamScanPath = "C:\Program Files (x86)\ClamWin\bin\clamscan.exe"
 
+# Chemin vers le répertoire des bases de données
+$databasePath = "C:\Program Files (x86)\ClamWin\bin\db"
+
 # Vérifier si le chemin vers clamscan.exe est correct
 if (-not (Test-Path $clamScanPath)) {
     Write-Output "Erreur: Le chemin vers clamscan.exe est incorrect ou le fichier n'existe pas."
     exit
+}
+
+# Vérifier si les fichiers de base de données sont présents
+$databaseFiles = "bytecode.cvd", "daily.cvd", "main.cvd", "mirror.dat"
+foreach ($file in $databaseFiles) {
+    if (-not (Test-Path (Join-Path -Path $databasePath -ChildPath $file))) {
+        Write-Output "Erreur: Fichier de base de données manquant: $file"
+        exit
+    }
 }
 
 while ($true) {
@@ -16,8 +28,8 @@ while ($true) {
     Get-ChildItem -Path $dossier_source -Recurse | ForEach-Object {
         $item = $_
 
-        # Lancer l'analyse avec ClamWin
-        & $clamScanPath --verbose --recursive $item.FullName
+        # Lancer l'analyse avec ClamWin en utilisant le répertoire des bases de données spécifié
+        & $clamScanPath --verbose --recursive --database=$databasePath $item.FullName
 
         # Vérification du code de retour de l'analyse
         $exitCode = $LASTEXITCODE
