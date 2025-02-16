@@ -1,21 +1,14 @@
 # Définition des chemins
+$ClamWinPath = "C:\Program Files (x86)\ClamWin\bin\clamscan.exe"
 $DossierReception = "\\serveur\samba_share"
 $DossierAnalyse = "C:\analyse"
 $DossierTransfer = "\\serveur\samba_sortie"
 $FichierLog = "C:\log\logs.txt"
-$ClamWinPath = "C:\Program Files (x86)\ClamWin\bin\clamscan.exe"  # Chemin vers l'exécutable ClamWin
 
 # Fonction d'écriture dans le log
 function Write-Log {
     param ($Message)
     "$((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) | $Message" | Out-File -Append -FilePath $FichierLog
-}
-
-# Fonction d'analyse avec ClamWin
-function Analyse-ClamWin {
-    param ($Fichier)
-    $Resultat = & "$ClamWinPath" --no-summary --infected --log="$FichierLog" "$Fichier"
-    return $Resultat
 }
 
 # Surveillance des fichiers
@@ -27,13 +20,10 @@ while ($true) {
             Write-Log "Dossier détecté: $DossierFichier"
             
             # Analyse avec ClamWin
-            $AnalyseResultatClamWin = Analyse-ClamWin $DossierFichier
-            Write-Log "ClamWin analyse: $AnalyseResultatClamWin"
-            
-            # Vérification des menaces détectées par ClamWin
-            $MenacesClamWin = $AnalyseResultatClamWin -contains "FOUND"
-            
-            if (!$MenacesClamWin) {
+            $Resultat = & "$ClamWinPath" --no-summary --infected --log="$FichierLog" "$DossierFichier"
+
+            # Vérification du résultat de l'analyse
+            if ($Resultat -match "Infected files: 0") {
                 # Fichier sain : déplacement vers le dossier de transfert
                 $NomUtilisateur = (Get-Item $DossierUtilisateur).Name
                 $DossierTransfertUtilisateur = "$DossierTransfer\$NomUtilisateur"
