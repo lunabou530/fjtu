@@ -1,60 +1,76 @@
-# Définition des chemins
-$ClamWinPath = "C:\Program Files (x86)\ClamWin\bin\clamscan.exe"
-$DatabasePath = "C:\ProgramData\.clamwin\db"
-$DossierReception = "\\serveur\samba_share"
-$DossierAnalyse = "C:\analyse"
-$DossierTransfer = "\\serveur\samba_sortie"
-$FichierLog = "C:\log\logs.txt"
+# Chemins des dossiers
+$dossier_reception = "Z:\"
+$dossier_analyse = "C:\projet\analyse"
+$dossier_transfert = "C:\projet\disponible"
+$dossier_quarantaine = "C:\projet\quarantaine"
+$fichier_log = "C:\projet\logs\logs.txt"
+
+# Chemin de ClamWin et de sa base de données
+$clamwin_path = "C:\Program Files (x86)\ClamWin\bin\clamscan.exe"
+$database_path = "C:\ProgramData\.clamwin\db"
 
 # Fonction d'écriture dans le log
 function Write-Log {
-    param ($Message)
-    "$((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) | $Message" | Out-File -Append -FilePath $FichierLog
+    param ($message)
+    "$((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) | $message" | Out-File -Append -FilePath $fichier_log
 }
 
 # Vérification de la base ClamWin
-if (!(Test-Path $DatabasePath)) {
-    Write-Log "⚠ Base ClamWin non trouvée. Vérifiez l'installation ou mettez à jour avec freshclam."
+if (!(Test-Path $database_path)) {
+    Write-Log "Base ClamWin non trouvée. Vérifiez l'installation ou mettez à jour avec freshclam."
     exit
+}
+
+# Création des dossiers s'ils n'existent pas
+foreach ($dossier in @($dossier_analyse, $dossier_transfert, $dossier_quarantaine)) {
+    if (!(Test-Path $dossier)) {
+        New-Item -Path $dossier -ItemType Directory | Out-Null
+    }
 }
 
 # Surveillance des fichiers
 while ($true) {
-    Get-ChildItem -Path $DossierReception -Directory | ForEach-Object {
-        $DossierUtilisateur = $_.FullName
-        Get-ChildItem -Path $DossierUtilisateur -Directory | ForEach-Object {
-            $DossierFichier = $_.FullName
-            Write-Log "📂 Dossier détecté: $DossierFichier"
+    Get-ChildItem -Path $dossier_reception -Directory | ForEach-Object {
+        $dossier_utilisateur = $_.FullName
+        Get-ChildItem -Path $dossier_utilisateur -Directory | ForEach-Object {
+            $dossier_fichier = $_.FullName
+            Write-Log "Dossier détecté: $dossier_fichier"
 
             # Déplacement vers le dossier d'analyse
-            $NomUtilisateur = (Get-Item $DossierUtilisateur).Name
-            $DossierTemp = "$DossierAnalyse\$NomUtilisateur"
-            if (!(Test-Path $DossierTemp)) {
-                New-Item -Path $DossierTemp -ItemType Directory | Out-Null
+            $nom_utilisateur = (Get-Item $dossier_utilisateur).Name
+            $dossier_temp = "$dossier_analyse\$nom_utilisateur"
+            if (!(Test-Path $dossier_temp)) {
+                New-Item -Path $dossier_temp -ItemType Directory | Out-Null
             }
-            Move-Item -Path $DossierFichier -Destination $DossierTemp -Force
-            Write-Log "🔄 Déplacé vers $DossierTemp pour analyse"
-            $DossierFichier = "$DossierTemp\$(Get-Item $DossierFichier).Name"
+            Move-Item -Path $dossier_fichier -Destination $dossier_temp -Force
+            Write-Log "Déplacé vers $dossier_temp pour analyse"
+            $dossier_fichier = "$dossier_temp\$(Get-Item $dossier_fichier).Name"
 
             # Analyse avec ClamWin
-            $Resultat = & "$ClamWinPath" --no-summary --infected --database="$DatabasePath" --log="$FichierLog" "$DossierFichier"
+            $resultat = & "$clamwin_path" --no-summary --infected --database="$database_path" --log="$fichier_log" "$dossier_fichier"
 
             # Vérification du résultat de l'analyse
-            if ($Resultat -match "Infected files: 0") {
+            if ($resultat -match "Infected files: 0") {
                 # Fichier sain : déplacement vers le dossier de transfert
-                $DossierTransfertUtilisateur = "$DossierTransfer\$NomUtilisateur"
-                if (!(Test-Path $DossierTransfertUtilisateur)) {
-                    New-Item -Path $DossierTransfertUtilisateur -ItemType Directory | Out-Null
+                $dossier_transfert_utilisateur = "$dossier_transfert\$nom_utilisateur"
+                if (!(Test-Path $dossier_transfert_utilisateur)) {
+                    New-Item -Path $dossier_transfert_utilisateur -ItemType Directory | Out-Null
                 }
-                Move-Item -Path $DossierFichier -Destination $DossierTransfertUtilisateur -Force
-                Write-Log "✅ $DossierFichier | sain | fichier_transfere"
-                Write-Host "Réussite: $DossierFichier transféré vers $DossierTransfertUtilisateur"
+                Move-Item -Path $dossier_fichier -Destination $dossier_transfert_utilisateur -Force
+                Write-Log "$dossier_fichier | SAIN | transféré"
+                Write-Host "Réussite: $dossier_fichier transféré vers $dossier_transfert_utilisateur"
             } else {
-                Write-Log "❌ $DossierFichier | VIRUS | fichier_non_transfere"
-                Write-Host "Échec: $DossierFichier est infecté et n'a pas été transféré."
+                # Fichier infecté : déplacement vers la quarantaine
+                $dossier_quarantaine_utilisateur = "$dossier_quarantaine\$nom_utilisateur"
+                if (!(Test-Path $dossier_quarantaine_utilisateur)) {
+                    New-Item -Path $dossier_quarantaine_utilisateur -ItemType Directory | Out-Null
+                }
+                Move-Item -Path $dossier_fichier -Destination $dossier_quarantaine_utilisateur -Force
+                Write-Log "$dossier_fichier | VIRUS | mis en quarantaine"
+                Write-Host "Échec: $dossier_fichier infecté, déplacé en quarantaine."
             }
 
-            Write-Log "📌 Analyse terminée pour $DossierFichier"
+            Write-Log "Analyse terminée pour $dossier_fichier"
         }
     }
     Start-Sleep -Seconds 10
