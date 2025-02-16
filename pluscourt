@@ -1,0 +1,37 @@
+# Chemins
+$dossier_reception = "Z:\"
+$dossier_analyse = "C:\projet\analyse"
+$dossier_transfert = "C:\projet\disponible"
+$dossier_quarantaine = "C:\projet\quarantaine"
+$fichier_log = "C:\projet\logs\logs.txt"
+$clamwin_path = "C:\Program Files (x86)\ClamWin\bin\clamscan.exe"
+$database_path = "C:\ProgramData\.clamwin\db"
+
+# Fonction log
+function Write-Log { param ($msg) "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | $msg" | Out-File -Append -FilePath $fichier_log }
+
+# Vérification de ClamWin et des dossiers
+if (!(Test-Path $clamwin_path) -or !(Test-Path $database_path)) { Write-Log "ClamWin ou sa base est manquante."; exit }
+foreach ($dossier in @($dossier_analyse, $dossier_transfert, $dossier_quarantaine)) { if (!(Test-Path $dossier)) { New-Item -Path $dossier -ItemType Directory | Out-Null } }
+
+# Surveillance
+while ($true) {
+    Get-ChildItem -Path $dossier_reception -Directory | ForEach-Object {
+        $user = $_.Name
+        Get-ChildItem -Path $_.FullName -Directory | ForEach-Object {
+            $fichier = $_.FullName
+            Write-Log "Analyse: $fichier"
+            Move-Item -Path $fichier -Destination "$dossier_analyse\$user" -Force
+            $resultat = & "$clamwin_path" --no-summary --infected --database="$database_path" --log="$fichier_log" "$dossier_analyse\$user\$(Get-Item $fichier).Name"
+
+            if ($resultat -match "Infected files: 0") {
+                Move-Item -Path "$dossier_analyse\$user\$(Get-Item $fichier).Name" -Destination "$dossier_transfert\$user" -Force
+                Write-Log "$fichier | SAIN | transféré"
+            } else {
+                Move-Item -Path "$dossier_analyse\$user\$(Get-Item $fichier).Name" -Destination "$dossier_quarantaine\$user" -Force
+                Write-Log "$fichier | VIRUS | mis en quarantaine"
+            }
+        }
+    }
+    Start-Sleep -Seconds 10
+}
