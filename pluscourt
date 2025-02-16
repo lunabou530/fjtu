@@ -1,7 +1,6 @@
 # Définition des chemins
 $ClamWinPath = "C:\Program Files (x86)\ClamWin\bin\clamscan.exe"
-$ClamDBPath = "C:\Program Files (x86)\ClamWin\db"  # Emplacement de la base de données
-$DossierReception = "Z:\"  # Dossier réseau monté
+$DossierReception = "Z:\"
 $DossierAnalyse = "C:\analyse"
 $DossierTransfer = "C:\projet\disponible"
 $FichierLog = "C:\projet\logs\logs.txt"
@@ -12,67 +11,48 @@ function Write-Log {
     "$((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) | $Message" | Out-File -Append -FilePath $FichierLog
 }
 
-# Vérification initiale du lecteur réseau
-if (!(Test-Path $DossierReception)) {
-    Write-Log "❌ Le lecteur réseau $DossierReception est inaccessible."
-    Write-Host "Le lecteur réseau $DossierReception est inaccessible. Vérifiez la connexion."
-    exit
+# Vérifier si le dossier d'analyse existe, sinon le créer
+if (!(Test-Path $DossierAnalyse)) {
+    New-Item -Path $DossierAnalyse -ItemType Directory | Out-Null
 }
 
-Write-Log "✅ Le lecteur réseau $DossierReception est accessible."
-
-# Vérification et mise à jour de la base ClamAV
-if (!(Test-Path $ClamDBPath)) {
-    Write-Log "⚠️ Base ClamAV non trouvée: $ClamDBPath"
-    Write-Host "⚠️ Base ClamAV non trouvée: $ClamDBPath. Vérifiez l'installation de ClamWin."
-    exit
+# Vérifier si le dossier de transfert existe, sinon le créer
+if (!(Test-Path $DossierTransfer)) {
+    New-Item -Path $DossierTransfer -ItemType Directory | Out-Null
 }
 
-Write-Log "🔄 Mise à jour de la base ClamAV..."
-& "C:\Program Files (x86)\ClamWin\bin\freshclam.exe" | Out-Null
-Write-Log "✅ Mise à jour de ClamAV terminée."
-
-# Boucle infinie pour surveiller les fichiers en continu
+# Surveillance continue des fichiers
 while ($true) {
+    # Récupérer les dossiers dans DossierReception
     Get-ChildItem -Path $DossierReception -Directory | ForEach-Object {
         $DossierUtilisateur = $_.FullName
         $NomUtilisateur = $_.Name
+        $DossierAnalyseUtilisateur = "$DossierAnalyse\$NomUtilisateur"
 
-        if (Test-Path $DossierUtilisateur) {
-            Write-Log "📂 Dossier détecté: $DossierUtilisateur"
+        # Déplacer le dossier vers le dossier d'analyse
+        Move-Item -Path $DossierUtilisateur -Destination $DossierAnalyseUtilisateur -Force
+        Write-Host "📂 Dossier déplacé vers analyse: $DossierUtilisateur -> $DossierAnalyseUtilisateur"
+        Write-Log "Dossier déplacé vers analyse: $DossierUtilisateur -> $DossierAnalyseUtilisateur"
 
-            $DossierAnalyseUtilisateur = "$DossierAnalyse\$NomUtilisateur"
-            if (!(Test-Path $DossierAnalyseUtilisateur)) {
-                New-Item -Path $DossierAnalyseUtilisateur -ItemType Directory | Out-Null
+        # Exécuter l'analyse avec ClamWin
+        & "$ClamWinPath" --official-db-only "$DossierAnalyseUtilisateur"
+        
+        # Vérifier le code de retour pour déterminer si un fichier est infecté
+        if ($LASTEXITCODE -eq 0) {
+            # Aucun virus détecté, déplacement vers le dossier de transfert
+            $DossierTransfertUtilisateur = "$DossierTransfer\$NomUtilisateur"
+            if (!(Test-Path $DossierTransfertUtilisateur)) {
+                New-Item -Path $DossierTransfertUtilisateur -ItemType Directory | Out-Null
             }
-
-            Write-Log "🔄 Déplacement vers analyse: $DossierUtilisateur -> $DossierAnalyseUtilisateur"
-            Move-Item -Path $DossierUtilisateur -Destination $DossierAnalyseUtilisateur -Force
-
-            # Exécution de l'analyse ClamWin
-            Write-Log "🕵️ Début de l'analyse ClamWin: $DossierAnalyseUtilisateur"
-            $Resultat = & "$ClamWinPath" --no-summary --infected "$DossierAnalyseUtilisateur" 2>&1
-            $AnalyseOK = $Resultat -match "Infected files:"
-
-            if (!$AnalyseOK) {
-                Write-Log "❌ Erreur ClamWin, l'analyse ne s'est pas faite correctement."
-                Write-Host "⚠️ Erreur ClamWin, l'analyse a échoué pour: $DossierAnalyseUtilisateur"
-                continue  # Passe au fichier suivant
-            }
-
-            if ($Resultat -match "Infected files: 0") {
-                # Fichier sain : déplacement vers dossier de transfert
-                $DossierTransfertUtilisateur = "$DossierTransfer\$NomUtilisateur"
-                if (!(Test-Path $DossierTransfertUtilisateur)) {
-                    New-Item -Path $DossierTransfertUtilisateur -ItemType Directory | Out-Null
-                }
-
-                Write-Log "✅ Dossier sain, déplacement vers transfert: $DossierAnalyseUtilisateur -> $DossierTransfertUtilisateur"
-                Move-Item -Path $DossierAnalyseUtilisateur -Destination $DossierTransfertUtilisateur -Force
-            } else {
-                Write-Log "❌ Dossier infecté, non transféré: $DossierAnalyseUtilisateur"
-            }
+            Move-Item -Path $DossierAnalyseUtilisateur -Destination $DossierTransfertUtilisateur -Force
+            Write-Host "✅ Dossier sain déplacé vers: $DossierTransfertUtilisateur"
+            Write-Log "✅ Dossier sain déplacé vers: $DossierTransfertUtilisateur"
+        } else {
+            # Virus détecté, le dossier reste dans analyse
+            Write-Host "❌ Dossier infecté détecté, il reste dans: $DossierAnalyseUtilisateur"
+            Write-Log "❌ Dossier infecté détecté, il reste dans: $DossierAnalyseUtilisateur"
         }
     }
+    # Attendre 10 secondes avant de vérifier à nouveau
     Start-Sleep -Seconds 10
 }
