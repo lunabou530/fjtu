@@ -1,0 +1,61 @@
+# Définition des chemins
+$ClamWinPath = "C:\Program Files (x86)\ClamWin\bin\clamscan.exe"
+$DatabasePath = "C:\ProgramData\.clamwin\db"
+$DossierReception = "\\serveur\samba_share"
+$DossierAnalyse = "C:\analyse"
+$DossierTransfer = "\\serveur\samba_sortie"
+$FichierLog = "C:\log\logs.txt"
+
+# Fonction d'écriture dans le log
+function Write-Log {
+    param ($Message)
+    "$((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) | $Message" | Out-File -Append -FilePath $FichierLog
+}
+
+# Vérification de la base ClamWin
+if (!(Test-Path $DatabasePath)) {
+    Write-Log "⚠ Base ClamWin non trouvée. Vérifiez l'installation ou mettez à jour avec freshclam."
+    exit
+}
+
+# Surveillance des fichiers
+while ($true) {
+    Get-ChildItem -Path $DossierReception -Directory | ForEach-Object {
+        $DossierUtilisateur = $_.FullName
+        Get-ChildItem -Path $DossierUtilisateur -Directory | ForEach-Object {
+            $DossierFichier = $_.FullName
+            Write-Log "📂 Dossier détecté: $DossierFichier"
+
+            # Déplacement vers le dossier d'analyse
+            $NomUtilisateur = (Get-Item $DossierUtilisateur).Name
+            $DossierTemp = "$DossierAnalyse\$NomUtilisateur"
+            if (!(Test-Path $DossierTemp)) {
+                New-Item -Path $DossierTemp -ItemType Directory | Out-Null
+            }
+            Move-Item -Path $DossierFichier -Destination $DossierTemp -Force
+            Write-Log "🔄 Déplacé vers $DossierTemp pour analyse"
+            $DossierFichier = "$DossierTemp\$(Get-Item $DossierFichier).Name"
+
+            # Analyse avec ClamWin
+            $Resultat = & "$ClamWinPath" --no-summary --infected --database="$DatabasePath" --log="$FichierLog" "$DossierFichier"
+
+            # Vérification du résultat de l'analyse
+            if ($Resultat -match "Infected files: 0") {
+                # Fichier sain : déplacement vers le dossier de transfert
+                $DossierTransfertUtilisateur = "$DossierTransfer\$NomUtilisateur"
+                if (!(Test-Path $DossierTransfertUtilisateur)) {
+                    New-Item -Path $DossierTransfertUtilisateur -ItemType Directory | Out-Null
+                }
+                Move-Item -Path $DossierFichier -Destination $DossierTransfertUtilisateur -Force
+                Write-Log "✅ $DossierFichier | sain | fichier_transfere"
+                Write-Host "Réussite: $DossierFichier transféré vers $DossierTransfertUtilisateur"
+            } else {
+                Write-Log "❌ $DossierFichier | VIRUS | fichier_non_transfere"
+                Write-Host "Échec: $DossierFichier est infecté et n'a pas été transféré."
+            }
+
+            Write-Log "📌 Analyse terminée pour $DossierFichier"
+        }
+    }
+    Start-Sleep -Seconds 10
+}
