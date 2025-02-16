@@ -3,7 +3,13 @@ $dossier_source = "Z:\"
 $dossier_destination = "C:\projet\disponible"
 
 # Chemin vers l'exécutable ClamWin
-$clamScanPath = "C:\Program Files\ClamWin\bin\clamscan.exe"
+$clamScanPath = "C:\Program Files (x86)\ClamWin\bin\clamscan.exe"
+
+# Vérifier si le chemin vers clamscan.exe est correct
+if (-not (Test-Path $clamScanPath)) {
+    Write-Output "Erreur: Le chemin vers clamscan.exe est incorrect ou le fichier n'existe pas."
+    exit
+}
 
 while ($true) {
     # Parcourir les fichiers et sous-dossiers dans le dossier source
