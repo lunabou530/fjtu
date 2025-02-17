@@ -1,11 +1,11 @@
 Import-Module BurntToast
 
-$imagePath = "C:\imagebu\transferrt.png"
+$imagePath = "C:\logo\logo.png"
 
-$dossier_reception = "C:\projet\source"
-$dossier_analyse_defender = "C:\projet\analyse"
-$dossier_transfert_vers_rocky_linux = "C:\projet\destination"
-$fichier_log = "C:\projet\logs\logs.txt"
+$dossier_reception = "C:\source"
+$dossier_analyse_defender = "C:\analyse"
+$dossier_transfert_vers_rocky_linux = "Z:\"
+$fichier_log = "C:\logs\logs.txt"
 
 function Obtenir_DateHeure {
     return (Get-Date).ToString("yyyy-MM-dd_HH-mm-ss")
