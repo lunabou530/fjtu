@@ -1,20 +1,16 @@
-# Chemins des dossiers
+
 $dossier_source = "Z:\"
 $dossier_destination = "C:\projet\disponible"
 
-# Chemin vers l'exécutable ClamWin
 $clamScanPath = "C:\Program Files (x86)\ClamWin\bin\clamscan.exe"
 
-# Chemin vers le répertoire des bases de données
 $databasePath = "C:\Program Files (x86)\ClamWin\bin\db"
 
-# Vérifier si le chemin vers clamscan.exe est correct
 if (-not (Test-Path $clamScanPath)) {
     Write-Output "Erreur: Le chemin vers clamscan.exe est incorrect ou le fichier n'existe pas."
     exit
 }
 
-# Vérifier si les fichiers de base de données sont présents
 $databaseFiles = "bytecode.cvd", "daily.cvd", "main.cvd", "mirrors.dat"
 foreach ($file in $databaseFiles) {
     if (-not (Test-Path (Join-Path -Path $databasePath -ChildPath $file))) {
@@ -24,34 +20,26 @@ foreach ($file in $databaseFiles) {
 }
 
 while ($true) {
-    # Parcourir les fichiers et sous-dossiers dans le dossier source
     Get-ChildItem -Path $dossier_source -Recurse | ForEach-Object {
         $item = $_
 
-        # Si c'est un fichier, on le passe à ClamWin pour l'analyser
         if ($item.PSIsContainer -eq $false) {
             Write-Output "Analyse du fichier: $($item.FullName)"
 
-            # Lancer l'analyse avec ClamWin en utilisant le répertoire des bases de données spécifié
             $clamScanResult = & $clamScanPath --verbose --recursive --database=$databasePath $item.FullName 2>&1
 
-            # Afficher la sortie de ClamWin pour le débogage
             Write-Output "Sortie de ClamWin: $clamScanResult"
 
-            # Vérification de la sortie de ClamWin
             if ($clamScanResult -match "Infected files: 0") {
-                # Fichier sain : Déplacer dans le dossier de destination
 
-                # Créer le chemin de destination, conserver la structure des sous-dossiers
                 $destination_path = Join-Path -Path $dossier_destination -ChildPath $item.FullName.Substring($dossier_source.Length)
 
-                # Créer les sous-dossiers dans le dossier de destination si nécessaire
                 $destination_directory = Split-Path -Path $destination_path -Parent
                 if (-not (Test-Path -Path $destination_directory)) {
                     New-Item -ItemType Directory -Path $destination_directory | Out-Null
                 }
 
-                # Déplacer l'élément (fichier)
+            
                 Move-Item -Path $item.FullName -Destination $destination_path
                 Write-Output "Déplacé: $($item.FullName) vers $destination_path"
             } else {
